@@ -10,7 +10,8 @@ Built with Flutter, so one codebase runs on Android and iOS.
 - **Tap a name** to mark them paid for the month shown. Tap again to undo.
 - **‹ ›** switches between months, back to the month collection started.
 - **Pencil icon** on the top card sets the monthly amount and the month collection started (default: Apr 2026).
-- **Add person** adds a member. **Long-press** a name to remove them.
+- **Calendar icon** on a name (or long-press the name) opens that person's months. Tick individual months, or pick a "from – to" range and mark it paid or unpaid in one go. Removing the person is at the bottom.
+- **Add person** adds a member.
 - Each name shows how many months they still owe.
 
 Data is stored privately on the device (one JSON blob via `shared_preferences`). Nothing is sent anywhere.

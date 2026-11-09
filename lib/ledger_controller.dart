@@ -41,6 +41,27 @@ class LedgerController extends ChangeNotifier {
     ));
   }
 
+  /// Marks every month from [a] to [b] (either order, inclusive) as paid or
+  /// unpaid for one member. Months already in the wanted state are left alone.
+  void setRange(String memberId, YearMonth a, YearMonth b, bool paid) {
+    final from = a.isAfter(b) ? b : a;
+    final to = a.isAfter(b) ? a : b;
+    final payments = [...state.payments];
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var m = from;
+    while (!m.isAfter(to)) {
+      final month = m;
+      final has = payments.any((p) => p.memberId == memberId && p.month == month);
+      if (paid && !has) {
+        payments.add(Payment(memberId: memberId, month: month, recordedAt: now));
+      } else if (!paid && has) {
+        payments.removeWhere((p) => p.memberId == memberId && p.month == month);
+      }
+      m = m.plusMonths(1);
+    }
+    _set(state.copyWith(payments: payments));
+  }
+
   /// Tap on a name: marks paid for [month], or undoes it if already paid.
   void togglePaid(String memberId, YearMonth month) {
     if (state.isPaid(memberId, month)) {

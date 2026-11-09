@@ -49,6 +49,23 @@ class _HomePageState extends State<HomePage> {
     if (name != null) widget.controller.addMember(name);
   }
 
+  void _openManage(Member member) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => _ManageSheet(
+        controller: widget.controller,
+        memberId: member.id,
+        now: _now,
+        onRemove: () {
+          Navigator.pop(ctx);
+          _confirmRemove(member);
+        },
+      ),
+    );
+  }
+
   Future<void> _confirmRemove(Member member) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -175,7 +192,7 @@ class _HomePageState extends State<HomePage> {
                             amount: amount,
                             onTap: () => widget.controller
                                 .togglePaid(member.id, selected),
-                            onLongPress: () => _confirmRemove(member),
+                            onManage: () => _openManage(member),
                           );
                         },
                       ),
@@ -266,7 +283,7 @@ class _MemberRow extends StatelessWidget {
     required this.monthsOwed,
     required this.amount,
     required this.onTap,
-    required this.onLongPress,
+    required this.onManage,
   });
 
   final String name;
@@ -274,7 +291,7 @@ class _MemberRow extends StatelessWidget {
   final int monthsOwed;
   final double amount;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -291,9 +308,9 @@ class _MemberRow extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        onLongPress: onLongPress,
+        onLongPress: onManage,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Row(
             children: [
               Expanded(
@@ -318,6 +335,15 @@ class _MemberRow extends StatelessWidget {
                   ],
                 ),
               ),
+              IconButton(
+                onPressed: onManage,
+                tooltip: 'Months and range',
+                icon: Icon(
+                  Icons.calendar_month,
+                  color: foreground.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(width: 4),
               Container(
                 width: 36,
                 height: 36,
@@ -337,6 +363,172 @@ class _MemberRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Per-person sheet: tick individual months, or mark a whole range at once.
+class _ManageSheet extends StatefulWidget {
+  const _ManageSheet({
+    required this.controller,
+    required this.memberId,
+    required this.now,
+    required this.onRemove,
+  });
+
+  final LedgerController controller;
+  final String memberId;
+  final YearMonth now;
+  final VoidCallback onRemove;
+
+  @override
+  State<_ManageSheet> createState() => _ManageSheetState();
+}
+
+class _ManageSheetState extends State<_ManageSheet> {
+  late YearMonth _from;
+  late YearMonth _to;
+
+  @override
+  void initState() {
+    super.initState();
+    final start = widget.controller.state.startMonth;
+    _from = start;
+    _to = widget.now.isBefore(start) ? start : widget.now;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final state = widget.controller.state;
+        final matches = state.members.where((m) => m.id == widget.memberId);
+        if (matches.isEmpty) return const SizedBox.shrink();
+        final member = matches.first;
+        final months = state.monthsDue(widget.now);
+        final amount = state.monthlyAmount;
+        final paidCount =
+            months.where((m) => state.isPaid(member.id, m)).length;
+
+        if (months.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('No months to show yet.'),
+          );
+        }
+
+        DropdownButton<YearMonth> picker(
+          YearMonth value,
+          ValueChanged<YearMonth> onChanged,
+        ) {
+          return DropdownButton<YearMonth>(
+            isExpanded: true,
+            value: value,
+            items: [
+              for (final m in months)
+                DropdownMenuItem(value: m, child: Text(m.label)),
+            ],
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  member.name,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: pine,
+                  ),
+                ),
+                Text(
+                  'Paid $paidCount of ${months.length} months · '
+                  '${_money(paidCount * amount)}',
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Mark a range of months',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: picker(_from, (v) => setState(() => _from = v)),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('to'),
+                    ),
+                    Expanded(
+                      child: picker(_to, (v) => setState(() => _to = v)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: pine),
+                        onPressed: () => widget.controller
+                            .setRange(member.id, _from, _to, true),
+                        child: const Text('Mark paid'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => widget.controller
+                            .setRange(member.id, _from, _to, false),
+                        child: const Text('Mark unpaid'),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                const Text(
+                  'Or tick individual months',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final m in months)
+                        CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          activeColor: pine,
+                          title: Text(m.label),
+                          value: state.isPaid(member.id, m),
+                          onChanged: (_) =>
+                              widget.controller.togglePaid(member.id, m),
+                        ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: widget.onRemove,
+                  icon: const Icon(Icons.delete_outline, color: rust),
+                  label: const Text(
+                    'Remove this person',
+                    style: TextStyle(color: rust),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
